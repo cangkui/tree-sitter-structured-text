@@ -9,3 +9,5 @@ Things changed are:
 3. Improve the parsing of variable declarations: Multiple variable declarations of the same type, direct address, etc.
 4. Improve the parsing of data type: add the support of size type.
 5. Add support for parsing `RETURN`/`EXIT` statement.
+6. Provide a build/parse script for python calling. Only support tree-sitter library <= 0.21.0 in python.
+
