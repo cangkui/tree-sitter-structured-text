@@ -35,41 +35,129 @@ module.exports = grammar({
   ],
   
   rules: {
-    source_file: $ => repeat(choice(
-      $._definition, 
-      $._declaration
-    )),
+    // source_file: $ => repeat(choice(
+    //   $._definition, 
+    //   $._declaration
+    // )),
+    source_file: $ => repeat($._definition),
     
     _definition: $ => choice(
       $.program_definition,
       $.action_definition,
-      // function defintion
+      $.fc_definition,
+      $.fb_definition,
+      $.type_definition
     ),
     
-    _declaration: $ => choice(
+    /*_declaration: $ => choice(
       $.constant_declaration,
       // variable declaration
-    ),
+    ),*/
     
     program_definition: $ => seq(
-      'PROGRAM',
-      field('programName', $.identifier),
+      /PROGRAM/i,
+      field('name', $.identifier),
       repeat($.statement),
-      'END_PROGRAM'
+      /END_PROGRAM/i
     ),
     
     action_definition: $ => seq(
-      'ACTION',
-      field('ActionName', $.identifier),
+      /ACTION/i,
+      field('name', $.identifier),
       ':',
       repeat($.statement),
-      'END_ACTION'
+      /END_ACTION/i
     ),
     
-    constant_declaration: $ => seq(
-      'VAR', 'CONSTANT',
-      repeat($.constant),
-      'END_VAR'
+    // constant_declaration: $ => seq(
+    //   /VAR/i, /CONSTANT/i,
+    //   repeat($.constant),
+    //   /END_VAR/i
+    // ),
+
+    fc_definition: $ => seq(
+      /FUNCTION/i,
+      field('name', $.identifier),
+      ':',
+      $._data_type,
+      repeat($.fc_var_blocks),
+      field('body', repeat($.statement)),
+      /END_FUNCTION/i,
+      optional(';')
+    ),
+
+    fb_definition: $ => seq(
+      /FUNCTION_BLOCK/i,
+      field('name', $.identifier),
+      repeat($.fc_var_blocks),
+      field('body', repeat($.statement)),
+      /END_FUNCTION_BLOCK/i,
+      optional(';')
+    ),
+
+    type_definition: $ => seq(
+      // TYPE ... END_TYPE
+      /TYPE/i,
+      field('name', $.identifier),
+      ':',
+      field('body', $.type_declaration),
+      /END_TYPE/i
+    ),
+
+    fc_var_blocks: $ => choice(
+      $.var_block,
+      $.var_tmp_block,
+      $.var_input_block,
+      $.var_in_out_block,
+      $.var_output_block,
+      $.var_local_block,
+      // $.constant_declaration,
+    ),
+
+    _var_modifier: $ => choice(
+      'CONSTANT',
+      'RETAIN',
+      // 'PERSISTENT',
+      // can add more if needed
+    ),
+
+    var_input_block: $ => seq(
+      /VAR_INPUT/i,
+      repeat($._var_modifier),
+      repeat($.variable_declaration),
+      /END_VAR/i
+    ),
+
+    var_block: $ => seq(
+      /VAR/i,
+      repeat($._var_modifier),
+      repeat($.variable_declaration),
+      /END_VAR/i
+    ),
+
+    var_local_block: $ => seq(
+      /VAR_LOCAL/i,
+      repeat($.variable_declaration),
+      /END_VAR/i
+    ),
+
+    var_in_out_block: $ => seq(
+      /VAR_IN_OUT/i,
+      repeat($.variable_declaration),
+      /END_VAR/i
+    ),
+
+    var_output_block: $ => seq(
+      /VAR_OUTPUT/i,
+      repeat($._var_modifier),
+      repeat($.variable_declaration),
+      /END_VAR/i
+    ),
+
+    var_tmp_block: $ => seq(
+      /VAR_TEMP/i,
+      repeat($.variable_declaration),
+      /END_VAR/i
     ),
     
     /* 
@@ -78,10 +166,12 @@ module.exports = grammar({
     
     statement: $ => choice(
       $.assignment,
-      $.expression_statement,
+      // $.expression_statement,
       $.call_statement,
       $._control_statement,
-      $._loop_statement
+      $._loop_statement,
+      $.return_statement,
+      $.exit_statement
     ),
     
     _control_statement: $ => choice(
@@ -119,7 +209,7 @@ module.exports = grammar({
     
     case_statement: $ => seq(
       'CASE',
-      field('caseControlValue', $.variable),
+      field('value', $.variable),
       'OF',
       repeat($.case),
       optional($.else_case),
@@ -160,7 +250,7 @@ module.exports = grammar({
     
     elseif_clause: $ => seq(
       'ELSIF',
-      field('elsifCondition', $._expression),
+      field('condition', $._expression),
       'THEN',
       repeat($.statement)
     ),
@@ -188,9 +278,9 @@ module.exports = grammar({
     )),
     
     index_range: $ => seq(
-      field('lowerBound', choice(alias(token(signedInteger), $.integer), $.identifier)),
+      field('lower', choice(alias(token(signedInteger), $.integer), $.identifier)),
       '..',
-      field('upperBound', choice(alias(token(signedInteger), $.integer), $.identifier))
+      field('upper', choice(alias(token(signedInteger), $.integer), $.identifier))
     ),
     
     for_range: $ => seq(
@@ -205,18 +295,84 @@ module.exports = grammar({
       ':=', 
       $._expression
     ),
+
+    return_statement: $ => seq(
+      'RETURN',
+      optional($._expression),
+      ';'
+    ),
+
+    exit_statement: $ => 'EXIT;',
     
     /*
       Declarations
     */
     
-    constant: $ => seq(
-      field('name', $.identifier),
+    // constant: $ => seq(
+    //   field('name', $.identifier),
+    //   ':',
+    //   $._data_type, 
+    //   $.variable_initialization
+    // ),
+
+    // variable_declaration: $ => seq(
+    //   field('name', $.identifier),
+    //   ':',
+    //   field('type', $._data_type),
+    //   optional(choice(
+    //     $.variable_initialization, ';'
+    //   ))
+    // ),
+
+    variable_declaration: $ => seq(
+      field('vars', $.var_list),        // more than one var like x,y,z
       ':',
-      $._data_type, 
+      field('type', $._data_type),
+      repeat($.var_specs),            // AT address := init value or CONSTANT, etc. 0-1
+      ';'
+    ),
+
+    var_list: $ => seq(
+      $.identifier,
+      repeat(seq(',', $.identifier))
+    ),
+
+    var_specs: $ => choice(
+      $.location,             // AT %MW100
+      $._var_modifier,        // modifiers like CONSTANT/RETAIN/PERSISTENT
       $.variable_initialization
     ),
+
+    location: $ => seq('AT', $.address),
+
+    address: $ => choice(
+      seq('%', field('location', $.direct_address)),
+      field('symbol', $.identifier)          // mapping the symbol like %Motor1
+    ),
+
+    direct_address: $ => seq(
+      field('prefix', $.location_prefix),
+      field('size',   $.size_prefix),
+      field('number', $.address_number),
+      optional(seq('.', field('bit', alias($.digit, $.number))))  // .0 => .15
+    ),
+
+    location_prefix: $ => choice('I', 'Q', 'M'),   // Input / Output / Memory
+    size_prefix:     $ => choice('X', 'B', 'W', 'D', 'L'), // Bit/Byte/Word/DWord/LWord
+    address_number:  $ => $.integer,
+    digit:           $ => /[0-9]/,                 // Single digit, used for bit indexing
     
+    struct_declaration: $ => seq(
+      /STRUCT/i,
+      repeat(field('member', $.variable_declaration)),
+      /END_STRUCT/i
+    ),
+
+    type_declaration: $ => choice(
+      $.struct_declaration,
+      // ... add more type declarations if needed
+    ),
+
     /*
       Declaration components
     */
@@ -276,7 +432,7 @@ module.exports = grammar({
     ),
     
     call_expression: $ => seq(
-      field('functionName', $.identifier),
+      field('name', $.identifier),
       optional($.index), // Only for function block instances
       '(',
       commaSep(field('input', choice($.parameter_assignment, $._expression))), // Function calls have ordered lists allowing expressions
@@ -317,10 +473,21 @@ module.exports = grammar({
       Data types
     */
     _data_type: $ => choice(
-      $.basic_data_type,
+      $.sized_type,
       alias($.identifier, $.derived_data_type),
       $.array_type
     ),
+
+    // Basic types of possible band lengths
+    sized_type: $ => choice(
+      ...['BOOL','TIME','DATE','TOD','DT','BYTE'].map(k => k), // no length
+      seq(/U?[SD]?INT/, optional($.type_length)),   // INT(8) / UINT(16) …
+      seq(/L?REAL/,    optional($.type_length)),   // REAL(32) / LREAL(64) …
+      seq(/W?STRING/,  optional($.type_length))    // STRING(80) / WSTRING(100)…
+    ),
+
+    // Length child node: (integer)
+    type_length: $ => seq('(', alias($.integer, $.length), ')'),
     
     basic_data_type: $ => choice(
       'BOOL',
